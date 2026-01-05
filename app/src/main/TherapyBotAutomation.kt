@@ -1,210 +1,343 @@
 package com.example.therapybotautomation
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Bundle
-import android.os.Environment
-import android.widget.Button
-import android.widget.TextView
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import kotlinx.coroutines.*
+import io.appium.java_client.AppiumDriver
+import io.appium.java_client.android.AndroidDriver
+import io.appium.java_client.android.options.UiAutomator2Options
+import org.openqa.selenium.By
+import org.openqa.selenium.WebElement
+import org.openqa.selenium.support.ui.WebDriverWait
+import org.openqa.selenium.support.ui.ExpectedConditions
+import com.opencsv.CSVReader
+import com.google.gson.GsonBuilder
 import java.io.File
+import java.io.FileReader
+import java.io.FileWriter
+import java.net.URL
+import java.time.Duration
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
-class MainActivity : AppCompatActivity() {
+// Data models
+data class Prompt(val text: String)
 
-    private lateinit var btnStartTests: Button
-    private lateinit var tvStatus: TextView
-    private lateinit var tvLog: TextView
+data class Message(
+    val timestamp: String,
+    val type: String,
+    val content: String
+)
 
-    private val PERMISSION_REQUEST_CODE = 100
+data class Conversation(
+    val appName: String,
+    val sessionId: String,
+    val startTime: String,
+    val endTime: String,
+    val messages: List<Message>
+)
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+data class TestSession(
+    val testDate: String,
+    val conversations: List<Conversation>
+)
 
-        initViews()
-        checkPermissions()
-        setupListeners()
+// Main automation class
+class TherapyBotAutomation {
+
+    private lateinit var driver: AndroidDriver
+    private val wait by lazy { WebDriverWait(driver, Duration.ofSeconds(30)) }
+    private val gson = GsonBuilder().setPrettyPrinting().create()
+
+    // App package names (THESE WILL BE UPDATED LATER WITH ACTUAL PACKAGE NAMES)
+    companion object {
+        const val ASH_PACKAGE = "com.ash.therapy" // Replace with actual package
+        const val DORO_PACKAGE = "com.doro.therapy" // Replace with actual package
+        const val WYSA_PACKAGE = "com.wysa.app" // Replace with actual package
+        const val APPIUM_SERVER = "http://127.0.0.1:4723" // Default Appium server
     }
 
-    private fun initViews() {
-        btnStartTests = findViewById(R.id.btn_start_tests)
-        tvStatus = findViewById(R.id.tv_status)
-        tvLog = findViewById(R.id.tv_log)
+    // Initialize Appium driver
+    fun initializeDriver() {
+        val options = UiAutomator2Options()
+            .setPlatformName("Android")
+            .setAutomationName("UiAutomator2")
+            .setNoReset(false) // Depending on whether or not we will want to keep the app data this will be set to true
+            .setFullReset(false)
 
-        tvStatus.text = "Ready! Place prompts.csv in Downloads folder"
+        driver = AndroidDriver(URL(APPIUM_SERVER), options)
     }
 
-    private fun setupListeners() {
-        btnStartTests.setOnClickListener {
-            startAutomationTests()
-        }
-    }
+    // Read prompts from CSV
+    fun readPromptsFromCSV(csvPath: String): List<Prompt> {
+        val prompts = mutableListOf<Prompt>()
 
-    private fun checkPermissions() {
-        val permissions = arrayOf(
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE
-        )
-
-        val permissionsNeeded = permissions.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-        }
-
-        if (permissionsNeeded.isNotEmpty()) {
-            ActivityCompat.requestPermissions(
-                this,
-                permissionsNeeded.toTypedArray(),
-                PERMISSION_REQUEST_CODE
-            )
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-                Toast.makeText(this, "Permissions granted", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Permissions required for file access", Toast.LENGTH_LONG).show()
+        CSVReader(FileReader(csvPath)).use { reader ->
+            reader.readAll().forEach { row ->
+                if (row.isNotEmpty() && row[0].isNotBlank()) {
+                    prompts.add(Prompt(row[0].trim()))
+                }
             }
         }
+
+        return prompts
     }
 
+    // Test Ash app
+    fun testAshApp(prompts: List<Prompt>): Conversation {
+        println("Starting Ash automation...")
+        val messages = mutableListOf<Message>()
+        val sessionId = generateSessionId()
+        val startTime = getCurrentTimestamp()
 
-    private fun startAutomationTests() {
-        // Auto-detect CSV file
-        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        val csvPath = "$downloadsDir/prompts.csv"
+        try {
+            // Launch Ash app
+            launchApp(ASH_PACKAGE)
+            Thread.sleep(3000) // Wait for app to load
 
-        val file = File(csvPath)
-        if (!file.exists()) {
-            Toast.makeText(this, "prompts.csv not found in Downloads folder!", Toast.LENGTH_LONG).show()
-            log("✗ Error: prompts.csv not found at: $csvPath")
-            log("Please place your CSV file in the Downloads folder and try again")
-            return
-        }
+            // Skip onboarding if needed
+            skipOnboarding()
 
-        btnStartTests.isEnabled = false
-        tvStatus.text = "Running tests..."
-
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                log("Initializing Appium automation...")
-                val automation = TherapyBotAutomation()
-
-                withContext(Dispatchers.Main) {
-                    log("Connecting to Appium server...")
-                }
-
-                automation.initializeDriver()
-
-                withContext(Dispatchers.Main) {
-                    log("Reading prompts from CSV...")
-                }
-
-                val prompts = automation.readPromptsFromCSV(csvPath)
-
-                withContext(Dispatchers.Main) {
-                    log("Loaded ${prompts.size} prompts")
-                    tvStatus.text = "Testing in progress... (${prompts.size} prompts)"
-                }
-
-                val conversations = mutableListOf<Conversation>()
-
-                // Test Ash
-                withContext(Dispatchers.Main) {
-                    log("\n--- Testing Ash ---")
-                }
-                conversations.add(automation.testAshApp(prompts))
-                withContext(Dispatchers.Main) {
-                    log("✓ Ash testing completed")
-                }
-
-                // Test Doro
-                withContext(Dispatchers.Main) {
-                    log("\n--- Testing Doro ---")
-                }
-                conversations.add(automation.testDoroApp(prompts))
-                withContext(Dispatchers.Main) {
-                    log("✓ Doro testing completed")
-                }
-
-                // Test Wysa
-                withContext(Dispatchers.Main) {
-                    log("\n--- Testing Wysa ---")
-                }
-                conversations.add(automation.testWysaApp(prompts))
-                withContext(Dispatchers.Main) {
-                    log("✓ Wysa testing completed")
-                }
-
-                // Create test session
-                val session = TestSession(
-                    testDate = java.time.LocalDateTime.now()
-                        .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                    conversations = conversations
+            prompts.forEach { prompt ->
+                val response = sendPromptAndGetResponse(
+                    prompt.text,
+                    findChatInput(),
+                    findSendButton(),
+                    findBotResponse()
                 )
 
-                // Save transcripts
-                val outputDir = "${Environment.getExternalStoragePublicDirectory(
-                    Environment.DIRECTORY_DOWNLOADS
-                )}/therapy_bot_transcripts"
-                File(outputDir).mkdirs()
-
-                val timestamp = System.currentTimeMillis()
-                automation.saveTranscriptsAsJSON(session, "$outputDir/transcripts_$timestamp.json")
-                automation.saveTranscriptsAsText(session, "$outputDir/transcripts_$timestamp.txt")
-
-                withContext(Dispatchers.Main) {
-                    log("\n✓ All tests completed successfully!")
-                    log("Transcripts saved to: $outputDir")
-                    tvStatus.text = "Tests completed! Check Downloads folder"
-                    btnStartTests.isEnabled = true
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Tests completed! Transcripts saved.",
-                        Toast.LENGTH_LONG
-                    ).show()
+                messages.add(Message(getCurrentTimestamp(), "user", prompt.text))
+                if (response != null) {
+                    messages.add(Message(getCurrentTimestamp(), "bot", response))
                 }
 
-                automation.quit()
+                Thread.sleep(2000) // Wait between messages
+            }
 
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    log("\n✗ Error: ${e.message}")
-                    e.printStackTrace()
-                    tvStatus.text = "Error occurred. Check logs."
-                    btnStartTests.isEnabled = true
-                    btnSelectCSV.isEnabled = true
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Error: ${e.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
+        } catch (e: Exception) {
+            println("Error in Ash automation: ${e.message}")
+            e.printStackTrace()
+        } finally {
+            closeApp()
+        }
+
+        return Conversation("Ash", sessionId, startTime, getCurrentTimestamp(), messages)
+    }
+
+    // Helper: Launch app
+    private fun launchApp(packageName: String) {
+        driver.activateApp(packageName)
+    }
+
+    // Helper: Close app
+    private fun closeApp() {
+        driver.terminateApp(driver.currentPackage)
+    }
+
+    // Helper: Skip onboarding screens
+    private fun skipOnboarding() {
+        try {
+            // Look for common skip/continue buttons
+            val skipButtons = listOf(
+                "skip", "Skip", "SKIP",
+                "continue", "Continue", "CONTINUE",
+                "get started", "Get Started", "GET STARTED",
+                "next", "Next", "NEXT"
+            )
+
+            skipButtons.forEach { text ->
+                try {
+                    val element = driver.findElement(
+                        By.xpath("//*[contains(@text, '$text') or contains(@content-desc, '$text')]")
+                    )
+                    element.click()
+                    Thread.sleep(1000)
+                } catch (e: Exception) {
+                    // Element not found, continue
                 }
             }
+        } catch (e: Exception) {
+            println("No onboarding to skip or already past it")
         }
     }
 
-    private fun log(message: String) {
-        runOnUiThread {
-            val currentLog = tvLog.text.toString()
-            tvLog.text = "$currentLog\n$message"
+    // Helper: Find chat input field
+    private fun findChatInput(): WebElement {
+        // Try multiple common selectors for chat input
+        val selectors = listOf(
+            By.id("message_input"),
+            By.id("chat_input"),
+            By.id("edittext"),
+            By.className("android.widget.EditText"),
+            By.xpath("//android.widget.EditText")
+        )
 
-            // Auto-scroll to bottom
-            val scrollView = findViewById<android.widget.ScrollView>(R.id.scroll_log)
-            scrollView?.post {
-                scrollView.fullScroll(android.widget.ScrollView.FOCUS_DOWN)
+        for (selector in selectors) {
+            try {
+                return wait.until(ExpectedConditions.presenceOfElementLocated(selector))
+            } catch (e: Exception) {
+                continue
             }
         }
+
+        throw Exception("Could not find chat input field")
+    }
+
+    // Helper: Find send button
+    private fun findSendButton(): WebElement {
+        val selectors = listOf(
+            By.id("send_button"),
+            By.id("btn_send"),
+            By.xpath("//*[@content-desc='Send' or @text='Send']"),
+            By.xpath("//android.widget.ImageButton")
+        )
+
+        for (selector in selectors) {
+            try {
+                return driver.findElement(selector)
+            } catch (e: Exception) {
+                continue
+            }
+        }
+
+        throw Exception("Could not find send button")
+    }
+
+    // Helper :Find bot response
+    private fun findBotResponse(): WebElement {
+        Thread.sleep(3000) // Wait for response
+
+        val selectors = listOf(
+            By.xpath("//android.widget.TextView[last()]"),
+            By.className("android.widget.TextView")
+        )
+        for (selector in selectors) {
+            try {
+                val elements = driver.findElements(selector)
+                if (elements.isNotEmpty()) {
+                    return elements.last()
+                }
+            } catch (e: Exception) {
+                continue
+            }
+        }
+
+        throw Exception("Could not find bot response")
+    }
+
+    // Send prompt and get response
+    private fun sendPromptAndGetResponse(
+        prompt: String,
+        inputField: WebElement,
+        sendButton: WebElement,
+        responseElement: WebElement
+    ): String? {
+        try {
+            inputField.clear()
+            inputField.sendKeys(prompt)
+            Thread.sleep(500)
+            sendButton.click()
+
+            // Wait for response
+            Thread.sleep(6000)
+
+            return responseElement.text
+        } catch (e: Exception) {
+            println("Error sending prompt: ${e.message}")
+            return null
+        }
+    }
+
+    // Save transcripts as JSON WOOOP
+    fun saveTranscriptsAsJSON(session: TestSession, outputPath: String) {
+        val json = gson.toJson(session)
+        FileWriter(outputPath).use { it.write(json) }
+        println("Transcripts saved to: $outputPath")
+    }
+
+    // Save transcripts as plain text (this option added aswell)
+    fun saveTranscriptsAsText(session: TestSession, outputPath: String) {
+        val sb = StringBuilder()
+        sb.appendLine("Test Session: ${session.testDate}")
+        sb.appendLine("=" .repeat(80))
+        sb.appendLine()
+
+        session.conversations.forEach { conv ->
+            sb.appendLine("App: ${conv.appName}")
+            sb.appendLine("Session ID: ${conv.sessionId}")
+            sb.appendLine("Start: ${conv.startTime}")
+            sb.appendLine("End: ${conv.endTime}")
+            sb.appendLine("-".repeat(80))
+
+            conv.messages.forEach { msg ->
+                sb.appendLine("[${msg.timestamp}] ${msg.type.uppercase()}:")
+                sb.appendLine(msg.content)
+                sb.appendLine()
+            }
+
+            sb.appendLine("=" .repeat(80))
+            sb.appendLine()
+        }
+
+        FileWriter(outputPath).use { it.write(sb.toString()) }
+        println("Transcripts saved to: $outputPath")
+    }
+
+    // Utility functions
+    private fun generateSessionId(): String {
+        return "session_${System.currentTimeMillis()}"
+    }
+
+    private fun getCurrentTimestamp(): String {
+        return LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+    }
+
+    // Cleanup
+    fun quit() {
+        if (::driver.isInitialized) {
+            driver.quit()
+        }
+    }
+}
+
+// Main execution
+fun main() {
+    val automation = TherapyBotAutomation()
+
+    try {
+        // initialize Appium Driver
+        automation.initializeDriver()
+
+        // Read prompts from CSV
+        val csvPath = "/sdcard/Download/prompts.csv" // Change later to csv path
+        val prompts = automation.readPromptsFromCSV(csvPath)
+
+        println("Loaded ${prompts.size} prompts from CSV")
+
+        // Run tests on all three apps
+        val conversations = mutableListOf<Conversation>()
+
+        conversations.add(automation.testAshApp(prompts))
+        conversations.add(automation.testDoroApp(prompts))
+        conversations.add(automation.testWysaApp(prompts))
+
+        // Create test session
+        val session = TestSession(
+            testDate = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+            conversations = conversations
+        )
+
+        // Save transcripts
+        val outputDir = "/sdcard/Download/therapy_bot_transcripts" //update later with the output paths
+        File(outputDir).mkdirs()
+
+        val timestamp = System.currentTimeMillis()
+        automation.saveTranscriptsAsJSON(session, "$outputDir/transcripts_$timestamp.json")
+        automation.saveTranscriptsAsText(session, "$outputDir/transcripts_$timestamp.txt")
+
+        println("Testing completed successfully!")
+
+    } catch (e: Exception) {
+        println("Error during testing: ${e.message}")
+        e.printStackTrace()
+    } finally {
+        automation.quit()
     }
 }
