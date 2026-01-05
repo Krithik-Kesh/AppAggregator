@@ -22,7 +22,7 @@ data class Prompt(val text: String)
 
 data class Message(
     val timestamp: String,
-    val type: String, // "user" or "bot"
+    val type: String,
     val content: String
 )
 
@@ -46,7 +46,7 @@ class TherapyBotAutomation {
     private val wait by lazy { WebDriverWait(driver, Duration.ofSeconds(30)) }
     private val gson = GsonBuilder().setPrettyPrinting().create()
 
-    // App package names - UPDATE THESE with actual package names
+    // App package names (THESE WILL BE UPDATED LATER WITH ACTUAL PACKAGE NAMES)
     companion object {
         const val ASH_PACKAGE = "com.ash.therapy" // Replace with actual package
         const val DORO_PACKAGE = "com.doro.therapy" // Replace with actual package
@@ -59,7 +59,7 @@ class TherapyBotAutomation {
         val options = UiAutomator2Options()
             .setPlatformName("Android")
             .setAutomationName("UiAutomator2")
-            .setNoReset(false) // Set to true if you want to keep app data
+            .setNoReset(false) // Depending on whether or not we will want to keep the app data this will be set to true
             .setFullReset(false)
 
         driver = AndroidDriver(URL(APPIUM_SERVER), options)
@@ -200,7 +200,7 @@ class TherapyBotAutomation {
         throw Exception("Could not find send button")
     }
 
-    // helper function to find bot resposne
+    // Helper :Find bot response
     private fun findBotResponse(): WebElement {
         Thread.sleep(3000) // Wait for response
 
@@ -208,7 +208,16 @@ class TherapyBotAutomation {
             By.xpath("//android.widget.TextView[last()]"),
             By.className("android.widget.TextView")
         )
-
+        for (selector in selectors) {
+            try {
+                val elements = driver.findElements(selector)
+                if (elements.isNotEmpty()) {
+                    return elements.last()
+                }
+            } catch (e: Exception) {
+                continue
+            }
+        }
 
         throw Exception("Could not find bot response")
     }
