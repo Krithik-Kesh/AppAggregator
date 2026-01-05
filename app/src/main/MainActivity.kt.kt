@@ -166,7 +166,6 @@ class `MainActivity.kt` : AppCompatActivity() {
                     e.printStackTrace()
                     tvStatus.text = "Error occurred. Check logs."
                     btnStartTests.isEnabled = true
-                    btnSelectCSV.isEnabled = true
                     Toast.makeText(
                         this@MainActivity,
                         "Error: ${e.message}",
