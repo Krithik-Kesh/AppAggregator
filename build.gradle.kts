@@ -1,4 +1,4 @@
-// build.gradle.kts (Module level)
+// Module level build
 
 plugins {
     id("com.android.application")
@@ -59,7 +59,7 @@ dependencies {
     // CSV Parser
     implementation("com.opencsv:opencsv:5.9")
 
-    // JSON for transcript output
+    // JSON for transcript output (Output can be changed if the team needs)
     implementation("com.google.code.gson:gson:2.10.1")
 
     // Coroutines for async operations
