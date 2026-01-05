@@ -236,7 +236,7 @@ class TherapyBotAutomation {
             sendButton.click()
 
             // Wait for response
-            Thread.sleep(5000)
+            Thread.sleep(6000)
 
             return responseElement.text
         } catch (e: Exception) {
@@ -306,7 +306,7 @@ fun main() {
         automation.initializeDriver()
 
         // Read prompts from CSV
-        val csvPath = "/sdcard/Download/prompts.csv" //this needs to be the csv path
+        val csvPath = "/sdcard/Download/prompts.csv" // Change later to csv path
         val prompts = automation.readPromptsFromCSV(csvPath)
 
         println("Loaded ${prompts.size} prompts from CSV")
