@@ -13,7 +13,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import java.io.File
 
-class `MainActivity.kt` : AppCompatActivity() {
+class MainActivity : AppCompatActivity() {
 
     private lateinit var btnStartTests: Button
     private lateinit var tvStatus: TextView

@@ -1,5 +1,7 @@
 package com.example.therapybotautomation
 
+import androidx.compose.foundation.layout.add
+import androidx.compose.ui.semantics.text
 import io.appium.java_client.AppiumDriver
 import io.appium.java_client.android.AndroidDriver
 import io.appium.java_client.android.options.UiAutomator2Options
@@ -121,6 +123,51 @@ class TherapyBotAutomation {
         return Conversation("Ash", sessionId, startTime, getCurrentTimestamp(), messages)
     }
 
+    // Test Doro app
+    fun testDoroApp(prompts: List<Prompt>): Conversation {
+        java.io.IO.println("Starting Doro automation...")
+        return runGenericTest("Doro", ca.raroze.doro.app, prompts)
+    }
+
+    // Test Wysa app
+    fun testWysaApp(prompts: List<Prompt>): Conversation {
+        java.io.IO.println("Starting Wysa automation...")
+        return runGenericTest("Wysa", bot.touchkin.ui.chat.WysaChatActivity, prompts)
+    }
+
+    // A generic helper to avoid repeating code for each app
+    private fun runGenericTest(appName: String, packageName: String, prompts: List<Prompt>): Conversation {
+        val messages = kotlin.collections.mutableListOf<Message>()
+        val sessionId = generateSessionId()
+        val startTime = getCurrentTimestamp()
+
+        try {
+            launchApp(packageName)
+            java.lang.Thread.sleep(5000) // Apps take time to open
+
+            prompts.forEach { prompt ->
+                // This uses the "find" logic wrote multiple IDS
+                val response = sendPromptAndGetResponse(
+                    prompt.text,
+                    findChatInput(),
+                    findSendButton(),
+                    findBotResponse()
+                )
+
+                messages.add(Message(getCurrentTimestamp(), "user", prompt.text))
+                if (response != null) {
+                    messages.add(Message(getCurrentTimestamp(), "bot", response))
+                }
+                Thread.sleep(2000)
+            }
+        } catch (e: java.lang.Exception) {
+            java.io.IO.println("Error in $appName automation: ${e.message}")
+        } finally {
+            closeApp()
+        }
+
+        return Conversation(appName, sessionId, startTime, getCurrentTimestamp(), messages)
+    }
     // Helper: Launch app
     private fun launchApp(packageName: String) {
         driver.activateApp(packageName)
@@ -295,24 +342,23 @@ class TherapyBotAutomation {
             driver.quit()
         }
     }
+    // (This closes the TherapyBotAutomation class)
 }
 
 // Main execution
 fun main() {
-    val automation = TherapyBotAutomation()
-
-    try {
-        // initialize Appium Driver
+    val automation = TherapyBotAutomation()try {
+        // Initialize Appium Driver
         automation.initializeDriver()
 
-        // Read prompts from CSV
-        val csvPath = "/sdcard/Download/prompts.csv" // Change later to csv path
+        // Path to the CSV file on the emulator
+        val csvPath = "/sdcard/Download/prompts.csv"
         val prompts = automation.readPromptsFromCSV(csvPath)
 
-        println("Loaded ${prompts.size} prompts from CSV")
+        java.io.IO.println("Loaded ${prompts.size} prompts from CSV")
 
         // Run tests on all three apps
-        val conversations = mutableListOf<Conversation>()
+        val conversations = kotlin.collections.mutableListOf<Conversation>()
 
         conversations.add(automation.testAshApp(prompts))
         conversations.add(automation.testDoroApp(prompts))
@@ -320,13 +366,25 @@ fun main() {
 
         // Create test session
         val session = TestSession(
-            testDate = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+            testDate = LocalDateTime.now().toString(),
             conversations = conversations
         )
 
-        // Save transcripts
-        val outputDir = "/sdcard/Download/therapy_bot_transcripts" //update later with the output paths
-        File(outputDir).mkdirs()
+        // Save results to the emulator's Download folder
+        val outputDir = "/sdcard/Download/transcripts"
+        val timestamp = java.lang.System.currentTimeMillis()
+
+        automation.saveTranscriptsAsJSON(session, "$outputDir/transcripts_$timestamp.json")
+        automation.saveTranscriptsAsText(session, "$outputDir/transcripts_$timestamp.txt")
+
+    } catch (e: java.lang.Exception) {
+        java.io.IO.println("Main execution failed: ${e.message}")
+        e.printStackTrace()
+    } finally {
+        automation.quit()
+    }
+}
+
 
         val timestamp = System.currentTimeMillis()
         automation.saveTranscriptsAsJSON(session, "$outputDir/transcripts_$timestamp.json")
