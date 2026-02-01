@@ -51,8 +51,8 @@ class TherapyBotAutomation {
     // App package names (THESE WILL BE UPDATED LATER WITH ACTUAL PACKAGE NAMES)
     companion object {
         const val ASH_PACKAGE = "com.ash.therapy" // Replace with actual package
-        const val DORO_PACKAGE = "com.doro.therapy" // Replace with actual package
-        const val WYSA_PACKAGE = "com.wysa.app" // Replace with actual package
+        const val DORO_PACKAGE = "ca.raroze.doro.app"
+        const val WYSA_PACKAGE = "bot.touchkin.ui.chat.WysaChatActivity"
         const val APPIUM_SERVER = "http://127.0.0.1:4723" // Default Appium server
     }
 
@@ -126,13 +126,13 @@ class TherapyBotAutomation {
     // Test Doro app
     fun testDoroApp(prompts: List<Prompt>): Conversation {
         java.io.IO.println("Starting Doro automation...")
-        return runGenericTest("Doro", ca.raroze.doro.app, prompts)
+        return runGenericTest("Doro", DORO_PACKAGE, prompts)
     }
 
     // Test Wysa app
     fun testWysaApp(prompts: List<Prompt>): Conversation {
         java.io.IO.println("Starting Wysa automation...")
-        return runGenericTest("Wysa", bot.touchkin.ui.chat.WysaChatActivity, prompts)
+        return runGenericTest("Wysa", WYSA_PACKAGE, prompts)
     }
 
     // A generic helper to avoid repeating code for each app
@@ -347,53 +347,37 @@ class TherapyBotAutomation {
 
 // Main execution
 fun main() {
-    val automation = TherapyBotAutomation()try {
-        // Initialize Appium Driver
+    val automation = TherapyBotAutomation()
+    try {
         automation.initializeDriver()
 
-        // Path to the CSV file on the emulator
-        val csvPath = "/sdcard/Download/prompts.csv"
-        val prompts = automation.readPromptsFromCSV(csvPath)
+        // Path to the JSON file on the emulator
+        val jsonPath = "/sdcard/Download/prompts.json"
+        val prompts = automation.readPromptsFromJSON(jsonPath)
 
-        java.io.IO.println("Loaded ${prompts.size} prompts from CSV")
+        java.io.IO.println("Loaded ${prompts.size} prompts from JSON")
 
-        // Run tests on all three apps
+        if (prompts.isEmpty()) {
+            java.io.IO.println("No prompts found at $jsonPath. Check your file.")
+            return
+        }
+
         val conversations = kotlin.collections.mutableListOf<Conversation>()
-
         conversations.add(automation.testAshApp(prompts))
         conversations.add(automation.testDoroApp(prompts))
         conversations.add(automation.testWysaApp(prompts))
 
-        // Create test session
         val session = TestSession(
             testDate = LocalDateTime.now().toString(),
             conversations = conversations
         )
 
-        // Save results to the emulator's Download folder
-        val outputDir = "/sdcard/Download/transcripts"
+        val outputDir = "/sdcard/Download"
         val timestamp = java.lang.System.currentTimeMillis()
-
-        automation.saveTranscriptsAsJSON(session, "$outputDir/transcripts_$timestamp.json")
-        automation.saveTranscriptsAsText(session, "$outputDir/transcripts_$timestamp.txt")
+        automation.saveTranscriptsAsJSON(session, "$outputDir/results_$timestamp.json")
 
     } catch (e: java.lang.Exception) {
         java.io.IO.println("Main execution failed: ${e.message}")
-        e.printStackTrace()
-    } finally {
-        automation.quit()
-    }
-}
-
-
-        val timestamp = System.currentTimeMillis()
-        automation.saveTranscriptsAsJSON(session, "$outputDir/transcripts_$timestamp.json")
-        automation.saveTranscriptsAsText(session, "$outputDir/transcripts_$timestamp.txt")
-
-        println("Testing completed successfully!")
-
-    } catch (e: Exception) {
-        println("Error during testing: ${e.message}")
         e.printStackTrace()
     } finally {
         automation.quit()
