@@ -13,7 +13,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import java.io.File
 
-class `MainActivity.kt` : AppCompatActivity() {
+class MainActivity : AppCompatActivity() {
 
     private lateinit var btnStartTests: Button
     private lateinit var tvStatus: TextView
@@ -166,7 +166,6 @@ class `MainActivity.kt` : AppCompatActivity() {
                     e.printStackTrace()
                     tvStatus.text = "Error occurred. Check logs."
                     btnStartTests.isEnabled = true
-                    btnSelectCSV.isEnabled = true
                     Toast.makeText(
                         this@MainActivity,
                         "Error: ${e.message}",

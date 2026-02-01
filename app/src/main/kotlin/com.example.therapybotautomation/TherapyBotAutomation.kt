@@ -1,5 +1,10 @@
 package com.example.therapybotautomation
 
+import com.google.gson.reflect.TypeToken
+import androidx.compose.foundation.layout.add
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.semantics.text
+import androidx.core.util.readText
 import io.appium.java_client.AppiumDriver
 import io.appium.java_client.android.AndroidDriver
 import io.appium.java_client.android.options.UiAutomator2Options
@@ -17,8 +22,13 @@ import java.time.Duration
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-// Data models
-data class Prompt(val text: String)
+//Data Model
+data class Prompt(
+    val text: String,
+    val emotion: String? = null,
+    val id: Int? = null,
+    val risk_level: String? = null
+)
 
 data class Message(
     val timestamp: String,
@@ -49,8 +59,8 @@ class TherapyBotAutomation {
     // App package names (THESE WILL BE UPDATED LATER WITH ACTUAL PACKAGE NAMES)
     companion object {
         const val ASH_PACKAGE = "com.ash.therapy" // Replace with actual package
-        const val DORO_PACKAGE = "com.doro.therapy" // Replace with actual package
-        const val WYSA_PACKAGE = "com.wysa.app" // Replace with actual package
+        const val DORO_PACKAGE = "ca.raroze.doro.app"
+        const val WYSA_PACKAGE = "bot.touchkin.ui.chat.WysaChatActivity"
         const val APPIUM_SERVER = "http://127.0.0.1:4723" // Default Appium server
     }
 
@@ -65,19 +75,21 @@ class TherapyBotAutomation {
         driver = AndroidDriver(URL(APPIUM_SERVER), options)
     }
 
-    // Read prompts from CSV
-    fun readPromptsFromCSV(csvPath: String): List<Prompt> {
-        val prompts = mutableListOf<Prompt>()
-
-        CSVReader(FileReader(csvPath)).use { reader ->
-            reader.readAll().forEach { row ->
-                if (row.isNotEmpty() && row[0].isNotBlank()) {
-                    prompts.add(Prompt(row[0].trim()))
-                }
+    fun readPromptsFromJSON(jsonPath: String): List<Prompt> {
+        return try {
+            val file = File(jsonPath)
+            if (!file.exists()) {
+                java.io.IO.println("JSON file not found at: $jsonPath")
+                return java.util.Collections.emptyList()
             }
-        }
 
-        return prompts
+            val jsonString = file.readText()
+            val listType = object : TypeToken<List<Prompt>>() {}.type
+            gson.fromJson(jsonString, listType)
+        } catch (e: java.lang.Exception) {
+            java.io.IO.println("Error reading JSON prompts: ${e.message}")
+            java.util.Collections.emptyList()
+        }
     }
 
     // Test Ash app
@@ -121,6 +133,51 @@ class TherapyBotAutomation {
         return Conversation("Ash", sessionId, startTime, getCurrentTimestamp(), messages)
     }
 
+    // Test Doro app
+    fun testDoroApp(prompts: List<Prompt>): Conversation {
+        java.io.IO.println("Starting Doro automation...")
+        return runGenericTest("Doro", DORO_PACKAGE, prompts)
+    }
+
+    // Test Wysa app
+    fun testWysaApp(prompts: List<Prompt>): Conversation {
+        java.io.IO.println("Starting Wysa automation...")
+        return runGenericTest("Wysa", WYSA_PACKAGE, prompts)
+    }
+
+    // A generic helper to avoid repeating code for each app
+    private fun runGenericTest(appName: String, packageName: String, prompts: List<Prompt>): Conversation {
+        val messages = kotlin.collections.mutableListOf<Message>()
+        val sessionId = generateSessionId()
+        val startTime = getCurrentTimestamp()
+
+        try {
+            launchApp(packageName)
+            java.lang.Thread.sleep(5000) // Apps take time to open
+
+            prompts.forEach { prompt ->
+                // This uses the "find" logic wrote multiple IDS
+                val response = sendPromptAndGetResponse(
+                    prompt.text,
+                    findChatInput(),
+                    findSendButton(),
+                    findBotResponse()
+                )
+
+                messages.add(Message(getCurrentTimestamp(), "user", prompt.text))
+                if (response != null) {
+                    messages.add(Message(getCurrentTimestamp(), "bot", response))
+                }
+                Thread.sleep(2000)
+            }
+        } catch (e: java.lang.Exception) {
+            java.io.IO.println("Error in $appName automation: ${e.message}")
+        } finally {
+            closeApp()
+        }
+
+        return Conversation(appName, sessionId, startTime, getCurrentTimestamp(), messages)
+    }
     // Helper: Launch app
     private fun launchApp(packageName: String) {
         driver.activateApp(packageName)
@@ -252,34 +309,6 @@ class TherapyBotAutomation {
         println("Transcripts saved to: $outputPath")
     }
 
-    // Save transcripts as plain text (this option added aswell)
-    fun saveTranscriptsAsText(session: TestSession, outputPath: String) {
-        val sb = StringBuilder()
-        sb.appendLine("Test Session: ${session.testDate}")
-        sb.appendLine("=" .repeat(80))
-        sb.appendLine()
-
-        session.conversations.forEach { conv ->
-            sb.appendLine("App: ${conv.appName}")
-            sb.appendLine("Session ID: ${conv.sessionId}")
-            sb.appendLine("Start: ${conv.startTime}")
-            sb.appendLine("End: ${conv.endTime}")
-            sb.appendLine("-".repeat(80))
-
-            conv.messages.forEach { msg ->
-                sb.appendLine("[${msg.timestamp}] ${msg.type.uppercase()}:")
-                sb.appendLine(msg.content)
-                sb.appendLine()
-            }
-
-            sb.appendLine("=" .repeat(80))
-            sb.appendLine()
-        }
-
-        FileWriter(outputPath).use { it.write(sb.toString()) }
-        println("Transcripts saved to: $outputPath")
-    }
-
     // Utility functions
     private fun generateSessionId(): String {
         return "session_${System.currentTimeMillis()}"
@@ -295,49 +324,27 @@ class TherapyBotAutomation {
             driver.quit()
         }
     }
+    // (This closes the TherapyBotAutomation class)
 }
 
 // Main execution
 fun main() {
     val automation = TherapyBotAutomation()
-
     try {
-        // initialize Appium Driver
         automation.initializeDriver()
 
-        // Read prompts from CSV
-        val csvPath = "/sdcard/Download/prompts.csv" // Change later to csv path
-        val prompts = automation.readPromptsFromCSV(csvPath)
+        // Path to the JSON file (ensure this is accessible to the test runner)
+        val jsonPath = "/Users/krithiktamilselvan/Downloads/prompts.json"
+        val prompts = automation.readPromptsFromJSON(jsonPath)
 
-        println("Loaded ${prompts.size} prompts from CSV")
+        if (prompts.isEmpty()) {
+            java.io.IO.println("No prompts loaded. Exiting.")
+            return
+        }
 
-        // Run tests on all three apps
-        val conversations = mutableListOf<Conversation>()
+        java.io.IO.println("Loaded ${prompts.size} prompts successfully.")
 
+        // Run tests...
+        val conversations = kotlin.collections.mutableListOf<Conversation>()
         conversations.add(automation.testAshApp(prompts))
-        conversations.add(automation.testDoroApp(prompts))
-        conversations.add(automation.testWysaApp(prompts))
-
-        // Create test session
-        val session = TestSession(
-            testDate = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-            conversations = conversations
-        )
-
-        // Save transcripts
-        val outputDir = "/sdcard/Download/therapy_bot_transcripts" //update later with the output paths
-        File(outputDir).mkdirs()
-
-        val timestamp = System.currentTimeMillis()
-        automation.saveTranscriptsAsJSON(session, "$outputDir/transcripts_$timestamp.json")
-        automation.saveTranscriptsAsText(session, "$outputDir/transcripts_$timestamp.txt")
-
-        println("Testing completed successfully!")
-
-    } catch (e: Exception) {
-        println("Error during testing: ${e.message}")
-        e.printStackTrace()
-    } finally {
-        automation.quit()
-    }
-}
+// ...
