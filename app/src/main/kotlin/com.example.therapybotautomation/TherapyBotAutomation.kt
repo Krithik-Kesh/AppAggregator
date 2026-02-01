@@ -1,7 +1,10 @@
 package com.example.therapybotautomation
 
+import com.google.gson.reflect.TypeToken
 import androidx.compose.foundation.layout.add
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.semantics.text
+import androidx.core.util.readText
 import io.appium.java_client.AppiumDriver
 import io.appium.java_client.android.AndroidDriver
 import io.appium.java_client.android.options.UiAutomator2Options
@@ -19,8 +22,13 @@ import java.time.Duration
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-// Data models
-data class Prompt(val text: String)
+//Data Model
+data class Prompt(
+    val text: String,
+    val emotion: String? = null,
+    val id: Int? = null,
+    val risk_level: String? = null
+)
 
 data class Message(
     val timestamp: String,
@@ -67,19 +75,21 @@ class TherapyBotAutomation {
         driver = AndroidDriver(URL(APPIUM_SERVER), options)
     }
 
-    // Read prompts from CSV
-    fun readPromptsFromCSV(csvPath: String): List<Prompt> {
-        val prompts = mutableListOf<Prompt>()
-
-        CSVReader(FileReader(csvPath)).use { reader ->
-            reader.readAll().forEach { row ->
-                if (row.isNotEmpty() && row[0].isNotBlank()) {
-                    prompts.add(Prompt(row[0].trim()))
-                }
+    fun readPromptsFromJSON(jsonPath: String): List<Prompt> {
+        return try {
+            val file = File(jsonPath)
+            if (!file.exists()) {
+                java.io.IO.println("JSON file not found at: $jsonPath")
+                return java.util.Collections.emptyList()
             }
-        }
 
-        return prompts
+            val jsonString = file.readText()
+            val listType = object : TypeToken<List<Prompt>>() {}.type
+            gson.fromJson(jsonString, listType)
+        } catch (e: java.lang.Exception) {
+            java.io.IO.println("Error reading JSON prompts: ${e.message}")
+            java.util.Collections.emptyList()
+        }
     }
 
     // Test Ash app
@@ -299,34 +309,6 @@ class TherapyBotAutomation {
         println("Transcripts saved to: $outputPath")
     }
 
-    // Save transcripts as plain text (this option added aswell)
-    fun saveTranscriptsAsText(session: TestSession, outputPath: String) {
-        val sb = StringBuilder()
-        sb.appendLine("Test Session: ${session.testDate}")
-        sb.appendLine("=" .repeat(80))
-        sb.appendLine()
-
-        session.conversations.forEach { conv ->
-            sb.appendLine("App: ${conv.appName}")
-            sb.appendLine("Session ID: ${conv.sessionId}")
-            sb.appendLine("Start: ${conv.startTime}")
-            sb.appendLine("End: ${conv.endTime}")
-            sb.appendLine("-".repeat(80))
-
-            conv.messages.forEach { msg ->
-                sb.appendLine("[${msg.timestamp}] ${msg.type.uppercase()}:")
-                sb.appendLine(msg.content)
-                sb.appendLine()
-            }
-
-            sb.appendLine("=" .repeat(80))
-            sb.appendLine()
-        }
-
-        FileWriter(outputPath).use { it.write(sb.toString()) }
-        println("Transcripts saved to: $outputPath")
-    }
-
     // Utility functions
     private fun generateSessionId(): String {
         return "session_${System.currentTimeMillis()}"
@@ -351,35 +333,18 @@ fun main() {
     try {
         automation.initializeDriver()
 
-        // Path to the JSON file on the emulator
-        val jsonPath = "/sdcard/Download/prompts.json"
+        // Path to the JSON file (ensure this is accessible to the test runner)
+        val jsonPath = "/Users/krithiktamilselvan/Downloads/prompts.json"
         val prompts = automation.readPromptsFromJSON(jsonPath)
 
-        java.io.IO.println("Loaded ${prompts.size} prompts from JSON")
-
         if (prompts.isEmpty()) {
-            java.io.IO.println("No prompts found at $jsonPath. Check your file.")
+            java.io.IO.println("No prompts loaded. Exiting.")
             return
         }
 
+        java.io.IO.println("Loaded ${prompts.size} prompts successfully.")
+
+        // Run tests...
         val conversations = kotlin.collections.mutableListOf<Conversation>()
         conversations.add(automation.testAshApp(prompts))
-        conversations.add(automation.testDoroApp(prompts))
-        conversations.add(automation.testWysaApp(prompts))
-
-        val session = TestSession(
-            testDate = LocalDateTime.now().toString(),
-            conversations = conversations
-        )
-
-        val outputDir = "/sdcard/Download"
-        val timestamp = java.lang.System.currentTimeMillis()
-        automation.saveTranscriptsAsJSON(session, "$outputDir/results_$timestamp.json")
-
-    } catch (e: java.lang.Exception) {
-        java.io.IO.println("Main execution failed: ${e.message}")
-        e.printStackTrace()
-    } finally {
-        automation.quit()
-    }
-}
+// ...
